@@ -1,0 +1,18 @@
+{
+  "name": "claude-agent-sdk-demo",
+  "version": "1.0.0",
+  "description": "Claude Agent SDK demo with custom MCP tools, subagents, and hooks",
+  "type": "module",
+  "scripts": {
+    "start": "bun run agent.ts",
+    "dev": "bun --watch run agent.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "latest",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.0.0"
+  }
+}

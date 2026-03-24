@@ -1,0 +1,10 @@
+.venv/
+node_modules/
+__pycache__/
+*.pyc
+.env
+.pytest_cache/
+sessions/
+notes/
+uv.lock
+bun.lock
