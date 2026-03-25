@@ -10,6 +10,7 @@ from src.dependencies import AgentDependencies
 from src.prompts import MAIN_SYSTEM_PROMPT
 from src.skill_toolset import skill_tools
 from src.http_tools import http_get, http_post
+from src.db_tools import save_note, search_notes
 from src.settings import load_settings
 
 # Initialize settings
@@ -131,3 +132,55 @@ async def http_post_tool(
         Response body, or error message if request fails
     """
     return await http_post(ctx, url, body)
+
+
+@skill_agent.tool
+async def save_note_tool(
+    ctx: RunContext[AgentDependencies],
+    title: str,
+    content: str,
+    source: Optional[str] = None,
+    tags: Optional[str] = None,
+) -> str:
+    """
+    Save a note to the persistent Neon Postgres database.
+
+    Use this tool when the user wants to:
+    - Save information, findings, or decisions for later
+    - Remember something across sessions
+    - Store a URL, research result, or any text with a title
+
+    Args:
+        ctx: Agent runtime context with dependencies
+        title: Short title summarizing what is being saved
+        content: Full text content of the note
+        source: Optional URL or citation where the information came from
+        tags: Optional comma-separated tag string (e.g., "ai,research,tools")
+
+    Returns:
+        Confirmation with the new note ID and timestamp, or an error message
+    """
+    return await save_note(ctx, title, content, source, tags)
+
+
+@skill_agent.tool
+async def search_notes_tool(
+    ctx: RunContext[AgentDependencies],
+    keyword: str,
+) -> str:
+    """
+    Search previously saved notes by keyword.
+
+    Use this tool when the user wants to:
+    - Find notes they saved earlier
+    - Retrieve information stored in a previous session
+    - Search across all saved notes for a topic
+
+    Args:
+        ctx: Agent runtime context with dependencies
+        keyword: Search term to match against note titles, content, and tags
+
+    Returns:
+        Formatted list of matching notes (up to 20), or a message if none found
+    """
+    return await search_notes(ctx, keyword)

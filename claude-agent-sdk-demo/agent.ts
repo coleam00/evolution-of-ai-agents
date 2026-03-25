@@ -19,22 +19,41 @@ import {
   type HookCallback,
 } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
-import { appendFile, readFile, mkdir } from "fs/promises";
-import { existsSync } from "fs";
+import postgres from "postgres";
+
+// ============================================================================
+// DATABASE
+// ============================================================================
+
+const sql = postgres(process.env.DATABASE_URL!, { ssl: "require" });
+
+/** Create the notes table if it doesn't exist yet (runs once on startup). */
+async function initDb() {
+  await sql`
+    CREATE TABLE IF NOT EXISTS notes (
+      id         SERIAL PRIMARY KEY,
+      title      TEXT NOT NULL,
+      content    TEXT NOT NULL,
+      source     TEXT NOT NULL DEFAULT 'unknown',
+      tags       TEXT[] NOT NULL DEFAULT '{}',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+}
 
 // ============================================================================
 // CUSTOM MCP TOOLS
 // ============================================================================
 
 /**
- * Save a structured research note to a file.
+ * Save a structured research note to Neon (serverless Postgres).
  * This shows WHY you'd build custom tools - the built-in Read/Write handle
  * raw files, but this adds domain logic: structured metadata, timestamps,
- * and organized storage.
+ * and a queryable persistence layer backed by Neon.
  */
 const saveNoteTool = tool(
   "save_note",
-  "Save a research finding with structured metadata to the notes directory",
+  "Save a research finding with structured metadata to Neon Postgres",
   {
     title: z.string().describe("Short title for the finding"),
     content: z.string().describe("The research finding or insight"),
@@ -42,30 +61,29 @@ const saveNoteTool = tool(
     tags: z.string().optional().describe("Comma-separated tags for categorization"),
   },
   async ({ title, content, source, tags }) => {
-    if (!existsSync("./notes")) {
-      await mkdir("./notes", { recursive: true });
-    }
+    const tagsArray = tags ? tags.split(",").map((t) => t.trim()) : [];
 
-    const entry = {
-      title,
-      content,
-      source: source || "unknown",
-      tags: tags ? tags.split(",").map((t) => t.trim()) : [],
-      timestamp: new Date().toISOString(),
-    };
-
-    await appendFile("./notes/findings.jsonl", JSON.stringify(entry) + "\n");
+    const [row] = await sql`
+      INSERT INTO notes (title, content, source, tags)
+      VALUES (${title}, ${content}, ${source || "unknown"}, ${tagsArray})
+      RETURNING id, created_at
+    `;
 
     return {
-      content: [{ type: "text" as const, text: `Saved note: "${title}"` }],
+      content: [
+        {
+          type: "text" as const,
+          text: `Saved note: "${title}" (id=${row.id}, saved at ${row.created_at})`,
+        },
+      ],
     };
   }
 );
 
 /**
- * Search saved notes by keyword.
- * Another custom tool that adds logic beyond raw file reading -
- * it parses JSONL, searches across fields, and returns structured results.
+ * Search saved notes by keyword using Postgres ILIKE.
+ * Searches across title, content, and each tag — no file parsing needed,
+ * Neon handles the query efficiently even as the dataset grows.
  */
 const searchNotesTool = tool(
   "search_notes",
@@ -74,22 +92,18 @@ const searchNotesTool = tool(
     keyword: z.string().describe("Search term to find in saved notes"),
   },
   async ({ keyword }) => {
-    if (!existsSync("./notes/findings.jsonl")) {
-      return {
-        content: [{ type: "text" as const, text: "No notes saved yet." }],
-      };
-    }
+    const pattern = `%${keyword}%`;
 
-    const data = await readFile("./notes/findings.jsonl", "utf-8");
-    const lines = data.trim().split("\n").filter(Boolean);
-    const notes = lines.map((line) => JSON.parse(line));
-
-    const matches = notes.filter(
-      (note) =>
-        note.title.toLowerCase().includes(keyword.toLowerCase()) ||
-        note.content.toLowerCase().includes(keyword.toLowerCase()) ||
-        note.tags.some((t: string) => t.toLowerCase().includes(keyword.toLowerCase()))
-    );
+    const matches = await sql`
+      SELECT id, title, content, source, tags, created_at
+      FROM notes
+      WHERE title    ILIKE ${pattern}
+         OR content  ILIKE ${pattern}
+         OR EXISTS (
+               SELECT 1 FROM unnest(tags) t WHERE t ILIKE ${pattern}
+            )
+      ORDER BY created_at DESC
+    `;
 
     if (matches.length === 0) {
       return {
@@ -98,11 +112,16 @@ const searchNotesTool = tool(
     }
 
     const summary = matches
-      .map((n) => `- **${n.title}** (${n.timestamp})\n  ${n.content}`)
+      .map((n) => `- **${n.title}** (${n.created_at})\n  ${n.content}`)
       .join("\n\n");
 
     return {
-      content: [{ type: "text" as const, text: `Found ${matches.length} notes:\n\n${summary}` }],
+      content: [
+        {
+          type: "text" as const,
+          text: `Found ${matches.length} note(s):\n\n${summary}`,
+        },
+      ],
     };
   }
 );
@@ -161,6 +180,9 @@ async function main() {
   console.log("Claude Agent SDK - Research Agent");
   console.log("=".repeat(60));
   console.log(`Topic: ${topic}\n`);
+
+  // Ensure notes table exists before any tool calls
+  await initDb();
 
   const start = Date.now();
 

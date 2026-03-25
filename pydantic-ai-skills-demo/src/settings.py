@@ -55,6 +55,12 @@ class Settings(BaseSettings):
     app_env: str = Field(default="development", description="Application environment")
     log_level: str = Field(default="INFO", description="Logging level")
 
+    # Database (Optional — required for notes skill)
+    database_url: Optional[str] = Field(
+        default=None,
+        description="Neon (or any Postgres) connection string for the notes skill"
+    )
+
     # Logfire (Optional)
     logfire_token: Optional[str] = Field(
         default=None,

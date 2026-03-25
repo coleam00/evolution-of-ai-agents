@@ -37,10 +37,9 @@ cp .env.example .env
 ```
 
 Required variables:
-- `DATABASE_URL` - PostgreSQL connection string with PGVector extension
-  - Docker Compose (default): `postgresql://raguser:ragpass123@localhost:5433/postgres`
-  - Supabase: `postgresql://postgres.[project-ref]:[password]@aws-0-[region].pooler.supabase.com:5432/postgres`
-  - Neon: `postgresql://[user]:[password]@[endpoint].neon.tech/[dbname]`
+- `DATABASE_URL` - Neon serverless Postgres connection string with PGVector extension
+  - Get yours at https://console.neon.tech → Connection Details → Connection string
+  - Example: `postgresql://[user]:[password]@[endpoint].neon.tech/[dbname]?sslmode=require`
 
 - `OPENAI_API_KEY` - OpenAI API key for embeddings and LLM
   - Get from: https://platform.openai.com/api-keys
@@ -273,18 +272,6 @@ async with agent.run_stream(user_input, message_history=history) as result:
     async for text in result.stream_text(delta=False):
         print(f"\rAssistant: {text}", end="", flush=True)
 ```
-
-## Docker (PostgreSQL + pgvector)
-
-```bash
-# Start PostgreSQL with pgvector
-docker compose up -d
-
-# Check it's healthy
-docker compose ps
-```
-
-The schema is auto-applied on first start via the init script mount.
 
 ## Testing
 
